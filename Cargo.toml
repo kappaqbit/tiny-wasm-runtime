@@ -1,0 +1,15 @@
+[package]
+name = "tinywasm"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+anyhow = "1.0.100"
+nom = "8.0.0"
+nom-leb128 = "0.2.0"
+num-derive = "0.4.0"
+num-traits = "0.2.15"
+
+[dev-dependencies]
+wat = "1.239.0"
+pretty_assertions = "1.4.1"
