@@ -11,7 +11,8 @@ use num_traits::FromPrimitive as _;
 use super::{
     instruction::Instruction,
     section::{Function, SectionCode}, 
-    types::{FuncType, FunctionLocal, ValueType}
+    types::{FuncType, FunctionLocal, ValueType},
+    opcode::Opcode,
 };
 
 #[derive(Debug, PartialEq, Eq)]
@@ -115,6 +116,11 @@ fn decode_type_section(input: &[u8]) -> IResult<&[u8], Vec<FuncType>> {
         let (_, types) = many0(decode_value_type)(types)?;
         func.params = types;
 
+        let (rest, size) = leb128_u32(rest)?;
+        let (rest, types) = take(size)(rest)?;
+        let (_, types) = many0(decode_value_type)(types)?;
+        func.result = types;
+
         func_types.push(func);
         input = rest;
     }
@@ -170,14 +176,35 @@ fn decode_function_body(input: &[u8]) -> IResult<&[u8], Function> {
         input = rest;
     }
 
-    body.code = vec![Instruction::End];
+    let mut remaining = input;
+
+    while !remaining.is_empty() {
+        let (rest, inst) = decode_instructions(remaining)?;
+        body.code.push(inst);
+        remaining = rest;
+    }
 
     Ok((&[], body))
 }
 
+fn decode_instructions(input: &[u8]) -> IResult<&[u8], Instruction> {
+    let (input, byte) = le_u8(input)?;
+    let op = Opcode::from_u8(byte)
+        .unwrap_or_else(|| panic!("invalid, opcode: {:X}", byte));
+    let (rest, inst) = match op {
+        Opcode::LocalGet => {
+            let (rest, idx) = leb128_u32(input)?;
+            (rest, Instruction::LocalGet(idx))
+        },
+        Opcode::I32Add => (input, Instruction::I32Add),
+        Opcode::End => (input, Instruction::End)
+    };
+    Ok((rest, inst))
+}
+
 #[cfg(test)]
 mod tests {
-    use anyhow::{Ok, Result};
+    use anyhow::Result;
 
     use crate::binary::{
         instruction::Instruction,
@@ -258,6 +285,33 @@ mod tests {
                         },
                     ],
                     code: vec![Instruction::End],
+                }]),
+                ..Default::default()
+            }
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn decode_func_add() -> Result<()> {
+        let wasm = wat::parse_file("test/test05.wat")?;
+        let module = Module::new(&wasm)?;
+        assert_eq!(
+            module,
+            Module {
+                type_section: Some(vec![FuncType {
+                    params: vec![ValueType::I32, ValueType::I32],
+                    result: vec![ValueType::I32],
+                }]),
+                function_section: Some(vec![0]),
+                code_section: Some(vec![Function {
+                    locals: vec![],
+                    code: vec![
+                        Instruction::LocalGet(0),
+                        Instruction::LocalGet(1),
+                        Instruction::I32Add,
+                        Instruction::End
+                    ],
                 }]),
                 ..Default::default()
             }
