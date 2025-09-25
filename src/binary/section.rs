@@ -2,6 +2,7 @@ use num_derive::FromPrimitive;
 
 use super::{instruction::Instruction, types::FunctionLocal};
 
+// FromPrimitive の from_u8()を使えるように
 #[derive(Debug, PartialEq, Eq, FromPrimitive)]
 pub enum SectionCode {
     Type = 0x01,

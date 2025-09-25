@@ -17,8 +17,8 @@ use super::{
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct Module {
-    pub magic: String,
-    pub version: u32,
+    pub magic: String,  // プリアンブル 先頭4byte: "\0asm"
+    pub version: u32,  // プリアンブル 残り4byte: version
     pub type_section: Option<Vec<FuncType>>,
     pub function_section: Option<Vec<u32>>,
     pub code_section: Option<Vec<Function>>,
@@ -38,18 +38,22 @@ impl Default for Module {
 
 impl Module {
     pub fn new(input: &[u8]) -> anyhow::Result<Module> {
-        let (_, module) = 
-            Module::decode(input)
-            .map_err(
-                |e| anyhow::anyhow!(
-                    "failed to parse wasm: {}", e
-                )
-            )?;
+        let (_, module) = Module::decode(input)
+            .map_err(|e| anyhow::anyhow!("failed to parse wasm: {}", e))?;
         Ok(module)
     }
 
     fn decode(input: &[u8]) -> IResult<&[u8], Module> {
-        let (input, _) = tag(&b"\0asm"[..])(input)?;
+        // プリアンブル
+        /*
+        b"\0asm"と一致する部分だけ読み取り、残りを取得
+        */
+        let (input, _) = tag(b"\0asm")(input)?;
+        /*
+        version:
+        0100 0000: 4byte
+        le_u32()を使って、リトルエンディアンで4byte読み取る
+        */
         let (input, version) = le_u32(input)?;
 
         let mut module = Module {
@@ -58,9 +62,11 @@ impl Module {
             ..Default::default()
         };
 
+        // プリアンブル以降を remaining に
         let mut remaining = input;
 
         while !remaining.is_empty() {
+            // section code と section size (ヘッダー) を読み取る 
             match decode_section_header(remaining) {
                 Ok((input, (code, size))) => {
                     let (rest, section_contents) = take(size)(input)?;
@@ -91,7 +97,13 @@ impl Module {
     }
 }
 
+// セクションヘッダーの読み取り
 fn decode_section_header(input: &[u8]) -> IResult<&[u8], (SectionCode, u32)> {
+    // pair()は以下と等価
+    // let (input, code) = le_u8(input)?;
+    // section code は 1byte
+    // let (input, size) = leb128_u32(input)?;
+    // wasm spec では値はleb128で読み取る必要あり
     let (input, (code, size)) = pair(le_u8, leb128_u32)(input)?;
     Ok((
         input,
@@ -215,10 +227,11 @@ mod tests {
 
     #[test]
     fn decode_simplest_module() -> Result<()> {
-        // wasmバイナリを生成
+        // ファイルからwasmバイナリを生成
         let wasm = wat::parse_file("test/test01.wat")?;
         // バイナリからModule構造体を作成
         let module = Module::new(&wasm)?;
+        // アサーション
         assert_eq!(module, Module::default());
         Ok(())
     }
