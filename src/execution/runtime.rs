@@ -1,10 +1,14 @@
-use anyhow::{bail, Result};
+use anyhow::{anyhow, bail, Result};
 
 use super::{
     store::{FuncInst, InternalFuncInst, Store}, 
     value::Value
 };
-use crate::binary::{instruction::Instruction, module::Module, types::ValueType};
+use crate::binary::{
+    instruction::Instruction, 
+    module::Module, 
+    types::{ExportDesc, ValueType},
+};
 
 #[derive(Default)]
 pub struct Frame {
@@ -32,7 +36,17 @@ impl Runtime {
         })
     }
 
-    pub fn call(&mut self, idx: usize, args: Vec<Value>) -> Result<Option<Value>> {
+    pub fn call(&mut self, name: impl Into<String>, args: Vec<Value>) -> Result<Option<Value>> {
+        let idx = match self
+            .store
+            .module
+            .exports
+            .get(&name.into())
+            .ok_or(anyhow!("not found export function"))?
+            .desc
+        {
+            ExportDesc::Func(idx) => idx as usize,
+        };
         let Some(func_inst) = self.store.funcs.get(idx) else {
             bail!("not found func")
         };
@@ -153,9 +167,18 @@ mod tests {
 
         for (left, right, want) in tests {
             let args = vec![Value::I32(left), Value::I32(right)];
-            let result = runtime.call(0, args)?;
+            let result = runtime.call("add", args)?;
             assert_eq!(result, Some(Value::I32(want)));
         }
+        Ok(())
+    }
+
+    #[test]
+    fn not_found_export_function() -> Result<()> {
+        let wasm = wat::parse_file("test/test05.wat")?;
+        let mut runtime = Runtime::instantiate(wasm)?;
+        let result = runtime.call("fooooo", vec![]);
+        assert!(result.is_err());
         Ok(())
     }
 }
