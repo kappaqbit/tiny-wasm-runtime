@@ -58,7 +58,7 @@ impl Runtime {
         }
     }
 
-    fn invoke_internal(&mut self, func: InternalFuncInst) -> Result<Option<Value>> {
+    fn push_frame(&mut self, func: &InternalFuncInst) {
         let bottom = self.stack.len() - func.func_type.params.len();
         let mut locals = self.stack.split_off(bottom);
 
@@ -80,6 +80,12 @@ impl Runtime {
         };
 
         self.call_stack.push(frame);
+    }
+
+    fn invoke_internal(&mut self, func: InternalFuncInst) -> Result<Option<Value>> {
+        let arity = func.func_type.result.len();
+
+        self.push_frame(&func);
 
         if let Err(e) = self.execute() {
             self.cleanup();
@@ -127,6 +133,14 @@ impl Runtime {
                     };
                     let result = left + right;
                     self.stack.push(result);
+                }
+                Instruction::Call(idx) => {
+                    let Some(func) = self.store.funcs.get(*idx as usize) else {
+                        bail!("not found func");
+                    };
+                    match func {
+                        FuncInst::Internal(func) => self.push_frame(&func.clone()),
+                    }
                 }
             }
         }
@@ -179,6 +193,20 @@ mod tests {
         let mut runtime = Runtime::instantiate(wasm)?;
         let result = runtime.call("fooooo", vec![]);
         assert!(result.is_err());
+        Ok(())
+    }
+
+    #[test]
+    fn funcs_call() -> Result<()> {
+        let wasm = wat::parse_file("test/func_call.wat")?;
+        let mut runtime = Runtime::instantiate(wasm)?;
+        let tests = vec![(2, 4), (10, 20), (1, 2)];
+
+        for (arg, want) in tests {
+            let args = vec![Value::I32(arg)];
+            let result = runtime.call("call_doubler", args)?;
+            assert_eq!(result, Some(Value::I32(want)));
+        }
         Ok(())
     }
 }

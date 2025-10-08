@@ -5,6 +5,7 @@ use super::{instruction::Instruction, types::FunctionLocal};
 // FromPrimitive の from_u8()を使えるように
 #[derive(Debug, PartialEq, Eq, FromPrimitive)]
 pub enum SectionCode {
+    Custom = 0x00,
     Type = 0x01,
     Import = 0x02,
     Function = 0x03,
